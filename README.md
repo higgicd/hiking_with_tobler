@@ -1,2 +1,2 @@
-# hiking_with_tobler
-Supplementary material for paper submitted to Findings
+# Hiking with Tobler
+Supplementary material for a paper submitted to Findings

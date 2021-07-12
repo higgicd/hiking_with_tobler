@@ -1,0 +1,273 @@
+---
+title: "Hiking with Tobler: Tracking Movement and Calibrating a Cost Function for Personalized 3D Accessibility"
+author:
+  - name: Christopher D. Higgins
+    email: cd.higgins@utoronto.ca
+    affiliation: University of Toronto Scarborough
+output: html_notebook
+---
+
+# ABSTRACT
+This analyzes the author’s travel trajectories to calibrate a bespoke walking cost function based on Tobler’s Hiking Function (THF). This cost function is then used to estimate personalized accessibility on a 3D network in Hong Kong. Beyond highlighting the general importance of slope in modelling walkability, the calibrated function results in greater estimates of accessibility than the original THF. This is partly interpreted as an outcome of the presence of staircases in the hiking data that increase walking speeds on steep slopes. The resulting cost function is arguably more reflective of an urban walking context than the THF’s unimproved terrain.
+
+# KEYWORDS
+Hiking function, route choice, trajectory analysis, fitness tracker, accessibility analysis
+
+```{r load packages, message = FALSE, include = FALSE}
+library(broom)
+library(huxtable)
+library(magrittr)
+library(tidyverse)
+library(sf)
+library(tmap)
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.path = "img/")
+```
+
+```{r define helper functions}
+tobler_f <- function(a, g, b1, b2){a * exp(-b1*abs(g + b2))}
+
+distance2D <- function(x1, x2, y1, y2){
+  dist2D <- sqrt((x2 - x1)^2 + (y2 - y1)^2)
+  return(dist2D)}
+
+distance3D <- function(x1, x2, y1, y2, z1, z2){
+  dist3D <- sqrt((x2 - x1)^2 + (y2 - y1)^2 + (z2 - z1)^2)
+  return(dist3D)}
+
+df_prep <- function(df){
+  df %<>% transmute(start_time = time, start_z = ele, geometry) %>% 
+  cbind(st_coordinates(df)) %>%
+  st_drop_geometry() %>%
+  rename(start_x = X, start_y = Y)
+  return(df)}
+
+df_calculate <- function(df, row_dur){
+  # first see if the row duration value is 1, if so just keep the original df
+  ifelse(row_dur != 1, 
+          calc_df <- df %>% filter(row_number() %% row_dur == 1), 
+          calc_df <- df)
+  
+  calc_df %<>%
+  mutate(end_time = lead(start_time),
+         end_x = lead(start_x),
+         end_y = lead(start_y),
+         end_z = lead(start_z),
+         duration = as.numeric(end_time - start_time),
+         length3D = distance3D(start_x, end_x, start_y, end_y, start_z, end_z),
+         speed = (length3D/duration) * 3.6,
+         gradient = (end_z - start_z)/distance2D(start_x, end_x, start_y, end_y),
+         #bin = cut(gradient, breaks=c(-1, seq(-1.025, 1.025, by=.01)), labels=seq(-1, 1.01, .01)),
+         #bin = as.numeric(as.character(bin))
+         bin = round(gradient, digits = 2)) %>% 
+  
+  # keep only the selected intervals and gradients between -1 and 1
+  filter(duration == row_dur, 
+         between(gradient, -1, 1))
+  return(calc_df)}
+```
+
+```{r load and prepare gpx data, include = FALSE}
+hike_april_22 <- st_read("./data/hike_april_22.gpx", layer = "track_points") %>% st_transform(crs = 2326) %>% df_prep()
+hike_april_29 <- st_read("./data/hike_april_29.gpx", layer = "track_points") %>% st_transform(crs = 2326) %>% df_prep()
+hike_may_1 <- st_read("./data/hike_may_1.gpx", layer = "track_points") %>% st_transform(crs = 2326) %>% df_prep()
+hike_may_19 <- st_read("./data/hike_may_19.gpx", layer = "track_points") %>% st_transform(crs = 2326) %>% df_prep()
+
+hike_data <- list(
+  hike_1s = rbind(df_calculate(hike_april_22, 1), df_calculate(hike_april_29, 1), df_calculate(hike_may_1, 1), df_calculate(hike_may_19, 1)) %>% 
+    mutate(data = "hike_1s", type = "raw"),
+  hike_3s = rbind(df_calculate(hike_april_22, 3), df_calculate(hike_april_29, 3), df_calculate(hike_may_1, 3), df_calculate(hike_may_19, 3))  %>% 
+    mutate(data = "hike_3s", type = "raw"),
+  hike_5s = rbind(df_calculate(hike_april_22, 5), df_calculate(hike_april_29, 5), df_calculate(hike_may_1, 5), df_calculate(hike_may_19, 5))  %>% 
+    mutate(data = "hike_5s", type = "raw"),
+  hike_10s = rbind(df_calculate(hike_april_22, 10), df_calculate(hike_april_29, 10), df_calculate(hike_may_1, 10), df_calculate(hike_may_19, 10)) %>% 
+    mutate(data = "hike_10s", type = "raw"))
+
+hike_data <- bind_rows(hike_data)
+
+hike_data_binned <- list(
+  hike_1s_binned = hike_data %>% filter(data == "hike_1s") %>% group_by(bin) %>% 
+    summarize(bin_speed = mean(speed)) %>% rename(gradient = bin, speed = bin_speed) %>% 
+    mutate(data = "hike_1s", type = "binned"),
+  hike_3s_binned = hike_data %>% filter(data == "hike_3s") %>% group_by(bin) %>% 
+    summarize(bin_speed = mean(speed)) %>% rename(gradient = bin, speed = bin_speed) %>% 
+    mutate(data = "hike_3s", type = "binned"),
+  hike_5s_binned = hike_data %>% filter(data == "hike_5s") %>% group_by(bin) %>% 
+    summarize(bin_speed = mean(speed)) %>% rename(gradient = bin, speed = bin_speed) %>% 
+    mutate(data = "hike_5s", type = "binned"),
+  hike_10s_binned = hike_data %>% filter(data == "hike_10s") %>% group_by(bin) %>% 
+    summarize(bin_speed = mean(speed)) %>% rename(gradient = bin, speed = bin_speed) %>% 
+    mutate(data = "hike_10s", type = "binned"))
+
+hike_data_binned <- bind_rows(hike_data_binned)
+```
+
+```{r estimate nls models, warning = FALSE, message = FALSE}
+hike_data_nls_fit <- list(
+  hike_1s = nls(speed ~ tobler_f(a, g = gradient, b1, b2), start = list(a = 6, b1 = 3.5, b2 = 0.05), 
+                    data = hike_data %>% filter(data == "hike_1s" & type == "raw")),
+  hike_3s = nls(speed ~ tobler_f(a, g = gradient, b1, b2), start = list(a = 6, b1 = 3.5, b2 = 0.05), 
+                    data = hike_data %>% filter(data == "hike_3s" & type == "raw")),
+  hike_5s = nls(speed ~ tobler_f(a, g = gradient, b1, b2), start = list(a = 6, b1 = 3.5, b2 = 0.05), 
+                    data = hike_data %>% filter(data == "hike_5s" & type == "raw")),
+  hike_10s = nls(speed ~ tobler_f(a, g = gradient, b1, b2), start = list(a = 6, b1 = 3.5, b2 = 0.05), 
+                     data = hike_data %>% filter(data == "hike_10s" & type == "raw")),
+  hike_1s_binned = nls(speed ~ tobler_f(a, g = gradient, b1, b2), start = list(a = 6, b1 = 3.5, b2 = 0.05), 
+                       data = hike_data_binned %>% filter(data == "hike_1s"& type == "binned")),
+  hike_3s_binned = nls(speed ~ tobler_f(a, g = gradient, b1, b2), start = list(a = 6, b1 = 3.5, b2 = 0.05), 
+                           data = hike_data_binned %>% filter(data == "hike_3s"& type == "binned")),
+  hike_5s_binned = nls(speed ~ tobler_f(a, g = gradient, b1, b2), start = list(a = 6, b1 = 3.5, b2 = 0.05), 
+                           data = hike_data_binned %>% filter(data == "hike_5s"& type == "binned")),
+  hike_10s_binned = nls(speed ~ tobler_f(a, g = gradient, b1, b2), start = list(a = 6, b1 = 3.5, b2 = 0.05), 
+                            data = hike_data_binned %>% filter(data == "hike_10s"& type == "binned"))
+)
+names(hike_data_nls_fit) <- c("1s_raw", "3s_agg", "5s_agg", "10s_agg", "1s_bin", "3s_bin", "5s_bin", "10s_bin")
+
+nls_results <- huxreg(hike_data_nls_fit, statistics = c("N" = "nobs", "AIC", "BIC"))
+#nls_results
+#quick_docx(nls_results, file = "./nls_results.docx")
+```
+
+```{r get parameters and prepare data for faceting}
+hike_data_nls_params <- list(
+  hike_data_nls = hike_data %>% group_by(data) %>%
+  do(nls_fit = tidy(nls(speed ~ tobler_f(a, g = gradient, b1, b2), 
+                        start = list(a = 6, b1 = 3.5, b2 = 0.05), data = .))) %>% 
+  unnest(nls_fit) %>% mutate(type = "raw"),
+
+  hike_data_binned_nls = hike_data_binned %>% group_by(data) %>%
+  do(nls_fit = tidy(nls(speed ~ tobler_f(a, g = gradient, b1, b2), 
+                        start = list(a = 6, b1 = 3.5, b2 = 0.05), data = .))) %>% 
+  unnest(nls_fit) %>% mutate(type = "binned")
+)
+
+hike_data_nls_params <- bind_rows(hike_data_nls_params) %>% 
+  mutate(estimate = if_else(p.value <= 0.05, estimate, 0)) %>% 
+  pivot_wider(id_cols = c(data, type), names_from = c(term), values_from = estimate)
+
+facet_data <- rbind(hike_data %>% transmute(data, speed, gradient, type), 
+                    hike_data_binned %>% transmute(data, speed, gradient, type)) %>% 
+  left_join(hike_data_nls_params, by = c("data", "type")) %>% 
+  # add in some dummy ones equal to b2 so that the function line reaches its max in the graphs
+  rbind(hike_data_nls_params %>% transmute(data, speed = 0, gradient = -1*b2, type, a, b1, b2)) %>%
+  
+  # calculate predicted speeds for left and right sides of function line
+  mutate(pred_speed_l = if_else(gradient <= -1*b2, tobler_f(a = a, g = gradient, b1 = b1, b2 = b2), NA_real_),
+         pred_speed_r = if_else(gradient >= -1*b2, tobler_f(a = a, g = gradient, b1 = b1, b2 = b2), NA_real_),
+         data = fct_relevel(data, "hike_1s", "hike_3s", "hike_5s", "hike_10s"),
+         type = fct_relevel(type, "raw", "binned")) 
+
+# create some fake data for the tobler function line
+tobler_df <- data.frame(gradient = seq(from = -1, to = 1, by=0.01)) %>% 
+  mutate(gradient = round(gradient, 2), # round so that floats can be compared
+         speed_l = if_else(gradient <= -0.05, tobler_f(a = 6, g = gradient, b1 = 3.5, b2 = 0.05), NA_real_),
+         speed_r = if_else(gradient >= -0.05, tobler_f(a = 6, g = gradient, b1 = 3.5, b2 = 0.05), NA_real_))
+```
+
+```{r graph fit models, warning = FALSE, include = FALSE}
+fig_2 <- ggplot(facet_data, aes(gradient, speed)) + 
+  theme_bw() +
+  facet_grid(cols = vars(data), rows = vars(type)) +
+  geom_point(size = .5, colour = "grey80") +
+  ylim(0, 8) +
+  xlab("gradient") +
+  ylab("travel speed (km/h)") +
+  labs(colour="impedance f") +
+  coord_cartesian(xlim = c(-1, 1)) +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(),
+        strip.text = element_text(colour = "black"),
+        panel.spacing = unit(.25, "lines"),
+        strip.background = element_blank()) +
+  stat_smooth(aes(x = gradient, y = speed_l, colour = "THF"), se = FALSE, formula = y ~ x, method = "loess", data = tobler_df) +
+  stat_smooth(aes(x = gradient, y = speed_r, colour = "THF"), se = FALSE, formula = y ~ x, method = "loess", data = tobler_df) +
+  stat_smooth(aes(x = gradient, y = pred_speed_l, colour = "NLS Fit"), method = "gam", formula =  y ~ s(x, bs = "cs"), se = FALSE) +
+  stat_smooth(aes(x = gradient, y = pred_speed_r, colour = "NLS Fit"), method = "gam", formula =  y ~ s(x, bs = "cs"), se = FALSE) +
+  scale_colour_manual(name="legend", values=c("#E41A1C", "#377EB8"))
+
+ggsave(fig_2, filename = "./img/Fig_2.jpg", device = "jpg", width = 7.29, height = 4.51)
+```
+
+```{r analyze accessibility data}
+odcm <- read.csv("./data/ODCostMatrix_Output.csv") %>% 
+  separate(Name, into = c("origin", "destination"), sep = " - ") %>% 
+  mutate(access_NLS = case_when(Total_Walk_NLS <= 15 ~ 1, TRUE ~ 0),
+         access_TOB = case_when(Total_Walk_Tobler <= 15 ~ 1, TRUE ~ 0),
+         access_2D = case_when(Total_Walk_2D <= 15 ~ 1, TRUE ~ 0))
+
+access_results <- odcm %>% summarize(access_NLS = sum(access_NLS),
+                                     access_TOB = sum(access_TOB),
+                                     access_2D = sum(access_2D))
+```
+
+# QUESTIONS
+Hong Kong is an intensely three-dimensional city, not only in terms of its complex ‘volumetric’ built environment (Bruyns et al., 2021), but also its mountainous terrain. While working at the Hong Kong Polytechnic University, I took up hiking on the city’s extensive trail network. But as a quantitative geographer with a general interest in the potential of sensors for personalized urban data analysis, I could not help but to combine work and leisure activities and utilized my mobile phone and smart watch to capture data on my physical performance. In particular, I am interested in how closely my captured travel trajectories align with Tobler’s (1993) ‘hiking function’ and how the calibrated cost function can be used for personalized predictive accessibility analysis in a 3D network context. 
+
+While Tobler’s Hiking Function (THF) has a long history of applications in the field of archaeology, Goodchild (2020) comments on the increasing usefulness of hiking functions in a variety of topic areas in geographical analysis (and includes an early graph of this paper’s data). Indeed, the THF is increasingly utilized in transport geography as a cost function in 3D surface (e.g. water access in Páez et al. (2020)) and linear network (e.g. access to rapid transit stations in Higgins (2019)) analysis. Other researchers have utilized new sources of activity data to calibrate different cost functions (Brundson, 2018; Campbell et al., 2019; Irmischer & Clarke, 2018; Pingel, 2010). Some version of the THF also appears to underpin routing suggestions on sloped terrain in Google Maps (Goodchild, 2020). However, no research has calibrated a bespoke cost function and employed it for personalized urban accessibility analysis.
+
+# METHODS
+Published several decades ago, Tobler calibrated the hiking function to coarse isoline data from Imhof (1950) and uses an exponential function to model the connection between velocity and slope:
+
+$$
+v = \alpha * e^{(-\beta_1 |g + \beta_2|)}
+$$
+
+Where $v$ is walking velocity in km/h, $\alpha$ is a constant that controls the maximum velocity, $g$ is the gradient of the terrain measured as the tangent of the angle of the slope in the direction of travel, $\beta_1$ controls the rate of decline as the gradient increases, and $\beta_2$ offsets the gradient by some amount to capture how walking speeds are highest on a slight downward gradient. In Tobler’s original formulation, $\alpha = 6 kph$, $\beta_1 = 3.5$, and $\beta_2 = 0.05$ so that the maximum walking velocity of 6 km/h is achieved at a gradient of -5%. 
+
+To answer the research questions posed earlier, I collected trajectory data over 4 hikes on the trails around Lung Fu Shan peak and the Pinewood Battery behind the University of Hong Kong in Central and Western District in 2018. The trails themselves feature a mix of paved segments and dirt paths as well as stairs at the steepest sections, making them a useful proxy for more urban walking. Data were collected using an Apple iPhone 8 and Apple Watch Series 0 through the ‘Outdoor Walk’ tracking in the Fitness application. This device combination captures latitude and longitude positioning using the iPhone’s GPS receiver, height from sea level using the barometer (precision of 0.1m), and heart rate readings using the heart rate monitor on the Apple Watch. The phone applies some smoothing algorithm to the GPS data and can also use the accelerometer and gyroscope in the watch to augment GPS positional accuracy in areas with poor or no GPS signal, although these features are opaque to the user. Readings were captured from the sensors at 1-second intervals. The resulting workouts were exported as gpx files using the Run Gap app for iOS. The trajectories were cleaned to remove the beginning of the walk to the trail (where the accuracy of GPS readings is compromised by tall buildings) and a handful of stops to rest during the hike. The exported trajectories and elevation profile for one of the hikes is shown in Figure 1. 
+
+To estimate accessibility, a 3D pedestrian network (LandsD, 2021; Sun et al., 2019) is prepared in a similar manner to that outlined in Higgins (2019a), including splitting links into 10m or less segments to improve the accuracy of slope-based travel times and specifying anisotropic travel costs. For simplicity, the travel speed of any mechanized links (e.g. travelator, elevator) is set to 2km/h. Origins and destinations for the accessibility analysis correspond to building centroids in the hilly Central and Western District and travel times are modelled using ArcGIS Pro.
+
+```{r fig 1, fig.cap="Figure 1. April 29 Hike Trajectory and Profile", out.width = '100%'}
+knitr::include_graphics("./img/Fig_1.jpg")
+```
+
+# FINDINGS
+To compare my walk speed with that predicted by Tobler’s function, nonlinear least squares was used to fit Eq. 1 to the data and results are presented in Table 1 and graphed in Figure 2. To test the sensitivity of the estimated results to the temporal scale of the trajectory data, I employed two aggregation strategies including collapsing collapsed the trajectories into 3s, 5s, and 10s time intervals and calculating average speeds at 1% gradient intervals. The sensitivity analysis suggests that the models are reasonably stable in parameters. The exception is the $\beta_2$ offset parameter which is insignificant in all binned models, indicating the cost curves in this category are estimated to be symmetric around a 0% gradient. Recognizing that neither AIC or BIC are useful for comparing model fit across different sample sizes, I focus on the results for the original raw 1s data given the reasonably stable parameter estimates across all model specifications.
+
+```{r table 1}
+nls_results
+```
+
+```{r fig 2, fig.cap="Figure 2. THF and NLS Fit Functions", out.width = '100%'}
+knitr::include_graphics("./img/Fig_2.jpg")
+```
+
+Results from the 1s raw model indicate that my maximum average walking speed is a bit slower than what Tobler (1993) would predict at about 4.4 km/h. The fit function suggests my maximum walking speed of about 4.6km/h occurs on about a -3.3% gradient rather than the -0.05% in Tobler’s formulation. On the other hand, the I tend to be faster at higher slopes than predicted by the original THF, likely due to the prevalence of staircases on the steepest sections of the trail.
+
+To estimate the effects of the cost function on personalized accessibility analysis, a simple scenario is crafted wherein I examine the spatial distribution of buildings that have access to the Kinwick Centre within 15 min of walking. Situated in the SoHo neighbourhood, the Kinwick Centre houses a grocery store and gym and is an interesting destination due to its location in the topographically-rich SoHo neighbourhood about halfway up the 800m Central-Mid-Levels escalator system. Figure 3 shows a 15 min isochrone calculated to the Kinwick Centre using the cost function calibrated to my 1s data. 
+
+```{r fig 3, fig.cap="Figure 3. Walk Access Isochrone - NLS Fit Function", out.width = '100%'}
+knitr::include_graphics("./img/Fig_3.jpg")
+```
+
+After running an origin-destination cost matrix calculation, accessibility results reveal that the function fit to my travel performance results in `r prettyNum((access_results[1,1]), big.mark = ",")` buildings within a 15 min walk to the Kinwick Centre, which is `r prettyNum(round(((access_results[1,1]/access_results[1,2])-1)*100, 1))`% more than the number estimated using the original THF. Beyond my base physical ability, it seems likely that this is an outcome of the staircases in the hiking trajectories. While the presence of staircases differs from the unimproved terrain used to calibrate the original THF and affects the comparability of the cost functions, the trail context used to calibrate my cost function is arguably more reflective of walking conditions in an urban context where stairs are used to enable higher speeds on steeper slopes. For comparison, assuming the network was 2D would result in `r prettyNum((access_results[1,3]), big.mark = ",")` buildings within a 15 min walk which would overestimate my accessibility by about `r prettyNum(round(((access_results[1,3]/access_results[1,1])-1)*100, 1))`% and `r prettyNum(round(((access_results[1,3]/access_results[1,2])-1)*100, 1))`% compared to the 3D network using my fit function and the THF respectively.
+
+While the data uncertainty caveats outlined in Goodchild (2020) apply in the calibration of the bespoke cost function and propagate to the accessibility analysis, these findings indicate the strong role of cost functions in calculating accessibility on 3D networks, the potential overestimation of access that can occur when assuming networks are planar, and the potential for underestimating access when using the THF compared to a calibrated function. Looking ahead, the proliferation of sensors on consumer-grade smart devices suggests that we are not far off from a future where the suite of movement data being collected can be utilized to personalize suggestions for routing and analyses of accessibility when using active modes on networks rich in topography. 
+
+# REFERENCES
+
+Brundson, C. (2018). Tobler’s Hiking Function. Retrieved from https://rpubs.com/chrisbrunsdon/hiking
+
+Bruyns, G. J., Higgins, C. D., & Nel, D. H. (2020). Urban Volumetrics: From vertical to volumetric urbanization and its extensions to empirical morphological analysis. Urban Studies, 1-19. https://doi.org/10.1177/0042098020936970.
+
+Campbell, M. J., Dennison, P. E., Butler, B. W., & Page, W. G. (2019). Using crowdsourced fitness tracker data to model the relationship between slope and travel rates. Applied Geography, 106, 93-107. https://doi.org/10.1016/j.apgeog.2019.03.008
+
+Goodchild, M. F. (2020). Beyond Tobler’s Hiking Function. Geographical Analysis, 52(4), 558-569. https://doi.org/10.1111/gean.12253
+
+Higgins, C. D. (2019). A 4D spatio-temporal approach to modelling land value uplift from rapid transit in high density and topographically-rich cities. Landscape and Urban Planning, 185, 68-82. https://doi.org/10.1016/j.landurbplan.2018.12.011
+
+Imhof, E. (1950). Gelände und Karte. Zurich: Rentsch.
+
+Irmischer, I. J., & Clarke, K. C. (2018). Measuring and modeling the speed of human navigation. Cartography and Geographic Information Science, 45(2), 177-186. https://doi.org/10.1080/15230406.2017.1292150
+
+LandsD. (2021, June). 3D Pedestrian Network. Retrieved from data.gov.hk: https://data.gov.hk/en-data/dataset/hk-landsd-openmap-3d-pedestrian-network
+
+Páez, A., Anjum, Z., Dickson-Anderson, S. E., Schuster-Wallace, C. J., Ramos, B. M., & Higgins, C. D. (2020). Comparing distance, time, and metabolic energy cost functions for walking accessibility in infrastructure-poor regions. Journal of Transport Geography, 82, 102564. https://doi.org/10.1016/j.jtrangeo.2019.102564
+
+Pingel, T. J. (2010). Modeling Slope as a Contributor to Route Selection in Mountainous Areas. Cartography and Geographic Information Science, 37, 137-148. https://doi.org/10.1559/152304010791232163
+
+Sun, G., Webster, C., & Zhang, X. (2019). Connecting the city: A three-dimensional pedestrian network of Hong Kong. Environment and Planning B: Urban Analytics and City Science, 1-16. https://doi.org/10.1177%2F2399808319847204
+
+Tobler, W. (1993). Three presentations on geographical analysis and modeling. Santa Barbara: National Center for Geographic Information and Analysis.
