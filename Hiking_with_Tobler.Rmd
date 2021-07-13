@@ -8,7 +8,7 @@ output: html_notebook
 ---
 
 # ABSTRACT
-This analyzes the author’s travel trajectories to calibrate a bespoke walking cost function based on Tobler’s Hiking Function (THF). This cost function is then used to estimate personalized accessibility on a 3D network in Hong Kong. Beyond highlighting the general importance of slope in modelling walkability, the calibrated function results in greater estimates of accessibility than the original THF. This is partly interpreted as an outcome of the presence of staircases in the hiking data that increase walking speeds on steep slopes. The resulting cost function is arguably more reflective of an urban walking context than the THF’s unimproved terrain.
+This paper analyzes the author’s travel trajectories to calibrate a bespoke walking cost function based on Tobler’s Hiking Function (THF). This cost function is then used to estimate personalized accessibility on a 3D network in Hong Kong. Beyond highlighting the general importance of slope in modelling walkability, the calibrated function results in greater estimates of accessibility than the original THF. This is partly interpreted as an outcome of the presence of staircases in the hiking data that increase walking speeds on steep slopes. The resulting cost function is arguably more reflective of an urban walking context than the THF’s unimproved terrain.
 
 # KEYWORDS
 Hiking function, route choice, trajectory analysis, fitness tracker, accessibility analysis
@@ -234,7 +234,7 @@ nls_results
 knitr::include_graphics("./img/Fig_2.jpg")
 ```
 
-Results from the 1s raw model indicate that my maximum average walking speed is a bit slower than what Tobler (1993) would predict at about 4.4 km/h. The fit function suggests my maximum walking speed of about 4.6km/h occurs on about a -3.3% gradient rather than the -0.05% in Tobler’s formulation. On the other hand, the I tend to be faster at higher slopes than predicted by the original THF, likely due to the prevalence of staircases on the steepest sections of the trail.
+Results from the 1s raw model indicate that my maximum average walking speed is a bit slower than what Tobler (1993) would predict at about 4.4 km/h. The fit function suggests my maximum walking speed of about 4.6km/h occurs on about a -3.3% gradient rather than the -5% in Tobler’s formulation. On the other hand, the I tend to be faster at higher slopes than predicted by the original THF, likely due to the prevalence of staircases on the steepest sections of the trail.
 
 To estimate the effects of the cost function on personalized accessibility analysis, a simple scenario is crafted wherein I examine the spatial distribution of buildings that have access to the Kinwick Centre within 15 min of walking. Situated in the SoHo neighbourhood, the Kinwick Centre houses a grocery store and gym and is an interesting destination due to its location in the topographically-rich SoHo neighbourhood about halfway up the 800m Central-Mid-Levels escalator system. Figure 3 shows a 15 min isochrone calculated to the Kinwick Centre using the cost function calibrated to my 1s data. 
 
