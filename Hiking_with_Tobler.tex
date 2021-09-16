@@ -11,7 +11,6 @@
 \usepackage{amsfonts}       % blackboard math symbols
 \usepackage{nicefrac}       % compact symbols for 1/2, etc.
 \usepackage{microtype}      % microtypography
-\usepackage{lipsum}
 \usepackage{graphicx}
 
 \title{Hiking with Tobler: Tracking Movement and Calibrating a Cost
@@ -25,6 +24,7 @@ Function for Personalized 3D Accessibility}
   1265 Military Trail, Toronto, ON. Canada, M1C 1A4 \\
   \texttt{\href{mailto:cd.higgins@utoronto.ca}{\nolinkurl{cd.higgins@utoronto.ca}}} \\
   }
+
 
 
 % Pandoc citation processing
@@ -167,11 +167,12 @@ at 1-second intervals. The resulting workouts were exported as
 \texttt{.gpx} files using the Run Gap app for iOS. The trajectories were
 cleaned to remove the beginning of the walk to the trail (where the
 accuracy of GPS readings is compromised by tall buildings) and a handful
-of stops to rest during the hikes. Figure 1 shows the trajectories and a
-combined terrain and elevation profile for one of the hikes.
+of stops to rest during the hikes. Figure \ref{fig:fig-profile} shows
+the trajectories and a combined terrain (derived from Google Street
+View) and elevation profile for one of the hikes.
 
-\begin{figure}
-\includegraphics[width=1\linewidth]{./img/Fig_1} \caption{April 29 Hike Trajectory and Profile}\label{fig:fig 1}
+\begin{figure}[H]
+\includegraphics[width=1\linewidth]{./img/Fig_1} \caption{April 29 Hike Trajectory and Profile}\label{fig:fig-profile}
 \end{figure}
 
 To model travel speeds, Tobler's (1993) hiking function uses an
@@ -187,7 +188,7 @@ controls the maximum velocity, \(g\) is the gradient of the terrain
 measured as the tangent of the angle of the slope in the direction of
 travel, \(\beta_1\) controls the rate of decline as the gradient
 increases, and \(\beta_2\) offsets the gradient by some amount to
-capture how walking speeds are highest on a slight downward gradient. In
+capture how walking speeds are highest on a slight downward slope. In
 Tobler's original formulation, \(\alpha = 6 kph\), \(\beta_1 = 3.5\),
 and \(\beta_2 = 0.05\) so that the maximum walking velocity of 6 km/h is
 achieved at a gradient of -5\%. I use nonlinear least squares to fit the
@@ -213,25 +214,28 @@ its location in the topographically-rich SoHo neighbourhood about
 halfway up the 800m Central-Mid-Levels escalator system. Using ArcGIS
 Pro, travel times are calculated three times: using the fit function and
 the THF to account for slope and a third time assuming the network is 2D
-with a constant walk speed of 5km/h.
+with a constant walk speed of 5km/h. Data and code notebooks for
+reproducing the analysis are available in a GitHub
+repository\footnote{\url{https://github.com/higgicd/hiking_with_tobler}}.
 
 \hypertarget{findings}{%
 \section{FINDINGS}\label{findings}}
 
-Results of the NLS models are presented in Table 1 and graphed in Figure
-2. The sensitivity analysis suggests that the models are reasonably
-stable in parameters across all model specifications. The exception is
-the \(\beta_2\) offset parameter which is insignificant in all binned
-models, indicating the cost curves in this category are estimated to be
-symmetric around a 0\% gradient. Recognizing that neither AIC nor BIC
-are useful for comparing model fit across different sample sizes, I
-focus on the results for the original raw 1s data. Results indicate that
-my maximum walking speed of about 4.6km/h occurs on about a -3.3\%
-gradient rather than the -5\% in Tobler's formulation. My average
-flat-ground walking speed is also a bit slower than what Tobler (1993)
-would predict at about 4.4 km/h. On the other hand, I tend to be faster
-on higher slopes than predicted by the original THF, likely due to the
-prevalence of staircases on the steepest sections of the trail.
+Results of the NLS models are presented in Table \ref{tab:tab-result}
+and graphed in Figure \ref{fig:fig-fit}. The sensitivity analysis
+suggests that the models are reasonably stable in parameters across all
+model specifications. The exception is the \(\beta_2\) offset parameter
+which is insignificant in all binned models, indicating the cost curves
+in this category are estimated to be symmetric around a 0\% gradient.
+Recognizing that neither AIC nor BIC are useful for comparing model fit
+across different sample sizes, I focus on the results for the original
+raw 1s data. Results indicate that my maximum walking speed of about
+4.6km/h occurs on about a -3.3\% gradient rather than the -5\% in
+Tobler's formulation. My average flat-ground walking speed is also a bit
+slower than what Tobler (1993) would predict at about 4.4 km/h. On the
+other hand, I tend to be faster on higher slopes than predicted by the
+original THF, likely due to the prevalence of staircases on the steepest
+sections of the trail.
 
  
   \providecommand{\huxb}[2]{\arrayrulecolor[RGB]{#1}\global\arrayrulewidth=#2pt}
@@ -244,7 +248,7 @@ prevalence of staircases on the steepest sections of the trail.
 \begin{threeparttable}
 \captionsetup{justification=centering,singlelinecheck=off}
 \caption{Table 1. NLS Model Results}
- \label{tab:table 1}
+ \label{tab:tab-result}
 \setlength{\tabcolsep}{0pt}
 \begin{tabularx}{1\textwidth}{p{0.111111111111111\textwidth} p{0.111111111111111\textwidth} p{0.111111111111111\textwidth} p{0.111111111111111\textwidth} p{0.111111111111111\textwidth} p{0.111111111111111\textwidth} p{0.111111111111111\textwidth} p{0.111111111111111\textwidth} p{0.111111111111111\textwidth}}
 
@@ -403,8 +407,8 @@ prevalence of staircases on the steepest sections of the trail.
 \end{table}
  
 
-\begin{figure}
-\includegraphics[width=1\linewidth]{./img/Fig_2} \caption{THF and NLS Fit Functions}\label{fig:fig 2}
+\begin{figure}[H]
+\includegraphics[width=1\linewidth]{./img/Fig_2} \caption{THF and NLS Fit Functions}\label{fig:fig-fit}
 \end{figure}
 
 Accessibility results for the three travel cost scenarios reveal that
@@ -417,8 +421,8 @@ network. For comparison, assuming the network was 2D would result in
 2,502 buildings within a 15 min walk which would overestimate my
 accessibility by about 9.4\% and 7.6\% compared to the 3D network using
 my fit function and the THF respectively. To highlight these
-differences, Figure 3 shows 15 min isochrones calculated to the Kinwick
-Centre for the three cost scenarios.
+differences, Figure \ref{fig:fig-iso} shows 15 min isochrones calculated
+to the Kinwick Centre for the three cost scenarios.
 
 While the data uncertainty caveats outlined in Goodchild (2020) apply in
 the calibration of the bespoke cost function and propagate to the
@@ -439,7 +443,7 @@ research and to personalize suggestions for routing on networks rich in
 topography.
 
 \begin{figure}[H]
-\includegraphics[width=1\linewidth]{./img/Fig_3} \caption{Walk Access Isochrone - NLS Fit Function}\label{fig:fig 3}
+\includegraphics[width=1\linewidth]{./img/Fig_3} \caption{Walk Access Isochrone - NLS Fit Function}\label{fig:fig-iso}
 \end{figure}
 
 \hypertarget{references}{%
